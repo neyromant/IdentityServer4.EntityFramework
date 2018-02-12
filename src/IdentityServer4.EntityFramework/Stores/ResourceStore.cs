@@ -41,7 +41,7 @@ namespace IdentityServer4.EntityFramework.Stores
         /// </summary>
         /// <param name="name">The name.</param>
         /// <returns></returns>
-        public Task<ApiResource> FindApiResourceAsync(string name)
+        public async Task<ApiResource> FindApiResourceAsync(string name)
         {
             var query =
                 from apiResource in _context.ApiResources
@@ -54,7 +54,7 @@ namespace IdentityServer4.EntityFramework.Stores
                     .ThenInclude(s => s.UserClaims)
                 .Include(x => x.UserClaims);
 
-            var api = apis.FirstOrDefault();
+            var api = await apis.AsNoTracking().FirstOrDefaultAsync();
 
             if (api != null)
             {
@@ -65,7 +65,7 @@ namespace IdentityServer4.EntityFramework.Stores
                 _logger.LogDebug("Did not find {api} API resource in database", name);
             }
 
-            return Task.FromResult(api.ToModel());
+            return api.ToModel();
         }
 
         /// <summary>
@@ -73,13 +73,13 @@ namespace IdentityServer4.EntityFramework.Stores
         /// </summary>
         /// <param name="scopeNames"></param>
         /// <returns></returns>
-        public Task<IEnumerable<ApiResource>> FindApiResourcesByScopeAsync(IEnumerable<string> scopeNames)
+        public async Task<IEnumerable<ApiResource>> FindApiResourcesByScopeAsync(IEnumerable<string> scopeNames)
         {
             var names = scopeNames.ToArray();
 
             var query =
                 from api in _context.ApiResources
-                where api.Scopes.Where(x=>names.Contains(x.Name)).Any()
+                where api.Scopes.Any(x => names.Contains(x.Name))
                 select api;
 
             var apis = query
@@ -88,12 +88,12 @@ namespace IdentityServer4.EntityFramework.Stores
                     .ThenInclude(s => s.UserClaims)
                 .Include(x => x.UserClaims);
 
-            var results = apis.ToArray();
+            var results = await apis.AsNoTracking().ToArrayAsync();
             var models = results.Select(x => x.ToModel()).ToArray();
 
             _logger.LogDebug("Found {scopes} API scopes in database", models.SelectMany(x => x.Scopes).Select(x => x.Name));
 
-            return Task.FromResult(models.AsEnumerable());
+            return models.AsEnumerable();
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace IdentityServer4.EntityFramework.Stores
         /// </summary>
         /// <param name="scopeNames"></param>
         /// <returns></returns>
-        public Task<IEnumerable<IdentityResource>> FindIdentityResourcesByScopeAsync(IEnumerable<string> scopeNames)
+        public async Task<IEnumerable<IdentityResource>> FindIdentityResourcesByScopeAsync(IEnumerable<string> scopeNames)
         {
             var scopes = scopeNames.ToArray();
 
@@ -113,35 +113,36 @@ namespace IdentityServer4.EntityFramework.Stores
             var resources = query
                 .Include(x => x.UserClaims);
 
-            var results = resources.ToArray();
+            var results = await resources.AsNoTracking().ToArrayAsync();
 
             _logger.LogDebug("Found {scopes} identity scopes in database", results.Select(x => x.Name));
 
-            return Task.FromResult(results.Select(x => x.ToModel()).ToArray().AsEnumerable());
+            return results.Select(x => x.ToModel()).ToArray().AsEnumerable();
         }
 
         /// <summary>
         /// Gets all resources.
         /// </summary>
         /// <returns></returns>
-        public Task<Resources> GetAllResourcesAsync()
+        public async Task<Resources> GetAllResourcesAsync()
         {
-            var identity = _context.IdentityResources
-              .Include(x => x.UserClaims);
+            var identity = await _context.IdentityResources
+              .AsNoTracking()
+              .Include(x => x.UserClaims)
+              .ToArrayAsync();
 
-            var apis = _context.ApiResources
+            var apis = await _context.ApiResources
+                .AsNoTracking()
                 .Include(x => x.Secrets)
                 .Include(x => x.Scopes)
-                    .ThenInclude(s => s.UserClaims)
-                .Include(x => x.UserClaims);
+                .ThenInclude(s => s.UserClaims)
+                .Include(x => x.UserClaims).ToArrayAsync();
 
-            var result = new Resources(
-                identity.ToArray().Select(x => x.ToModel()).AsEnumerable(),
-                apis.ToArray().Select(x => x.ToModel()).AsEnumerable());
+            var result = new Resources(identity.Select(x => x.ToModel()).AsEnumerable(), apis.Select(x => x.ToModel()).AsEnumerable());
 
-            _logger.LogDebug("Found {scopes} as all scopes in database", result.IdentityResources.Select(x=>x.Name).Union(result.ApiResources.SelectMany(x=>x.Scopes).Select(x=>x.Name)));
+            _logger.LogDebug("Found {scopes} as all scopes in database", result.IdentityResources.Select(x => x.Name).Union(result.ApiResources.SelectMany(x => x.Scopes).Select(x => x.Name)));
 
-            return Task.FromResult(result);
+            return result;
         }
     }
 }
